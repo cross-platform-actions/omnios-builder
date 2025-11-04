@@ -1,0 +1,129 @@
+name: Build VM Disk Image
+
+env:
+  PACKER_VERSION: '1.14.2'
+
+on:
+  push:
+    branches: '*'
+    tags: 'v*'
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  build:
+    name: ${{ matrix.version }}, ${{ matrix.architecture.name }}
+    runs-on: ubuntu-latest
+    strategy:
+        matrix:
+          version:
+            - r151056
+
+          architecture:
+            - name: x86-64
+              qemu: x86
+              qemu_executable: x86_64
+              uname: i86pc
+
+    steps:
+      - name: Clone Repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Install Dependencies
+        run: |
+          sudo apt update && \
+          sudo apt install -y \
+          fdisk \
+          dosfstools \
+          rsync \
+          curl \
+          python3 \
+          qemu-system-${{ matrix.architecture.qemu }}
+
+      - name: Print QEMU version
+        run: '"qemu-system-${{ matrix.architecture.qemu_executable }}" --version'
+
+      - uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ env.PACKER_VERSION }}
+
+      # - name: Setup tmate session
+      #   uses: mxschmitt/action-tmate@v3
+      #   with:
+      #     limit-access-to-actor: true
+
+      - name: Build Image
+        run: |
+          PACKER_LOG=1 ./build.sh \
+            '${{ matrix.version }}' \
+            '${{ matrix.architecture.name }}' \
+            -var 'headless=true'
+
+      - name: Create File
+        run: echo 'host to guest' > host_to_guest.txt
+
+      - name: Start Local HTTP Server
+        run: python3 -m http.server 8080 --directory output &
+
+      - name: Test Image
+        uses: cross-platform-actions/action@omnios
+        with:
+          operating_system: omnios
+          architecture: ${{ matrix.architecture.name }}
+          version: '${{ matrix.version }}'
+          image_url: http://localhost:8080/omnios-${{ matrix.version }}-${{ matrix.architecture.name }}.qcow2
+          shutdown_vm: false
+          shell: bash
+          run: |
+            set -x
+            uname -a
+            uname -s
+            uname -r
+            uname -v
+            uname -m
+            uname -p
+            pwd
+            echo $SHELL
+            hostname
+            ls -lah
+            whoami
+            env | sort
+            uname -v | grep -q 'omnios'
+            uname -v | grep -q '${{ matrix.version }}'
+            [ "`uname -m`" = '${{ matrix.architecture.uname || matrix.architecture.name }}' ]
+            [ "`pwd`" = '/home/runner/work/omnios-builder/omnios-builder' ]
+            [ "`hostname`" = 'runnervmg1sw1.local' ]
+            cat host_to_guest.txt | grep -q 'host to guest'
+            echo 'guest to host' > guest_to_host.txt
+
+      - name: Verify File Synchronization
+        run: cat guest_to_host.txt | grep -q 'guest to host'
+
+      - name: Extract Version
+        id: version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Extract changelog
+        if: github.ref_type == 'tag'
+        id: extract_changelog
+        uses: sean0x42/markdown-extract@v2
+        with:
+         file: changelog.md
+         pattern: '\[${{ steps.version.outputs.version }}\].+'
+         no-print-matched-heading: true
+
+      - name: Create Release
+        id: create_release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          name: OmniOS ${{ steps.version.outputs.VERSION }}
+          draft: true
+          files: output/*
+          body: ${{ steps.extract_changelog.outputs.markdown }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
