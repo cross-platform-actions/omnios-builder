@@ -23,6 +23,7 @@ jobs:
           architecture:
             - name: x86-64
               qemu: x86
+              qemu_executable: x86_64
               uname: i86pc
 
     steps:
@@ -43,7 +44,7 @@ jobs:
           qemu-system-${{ matrix.architecture.qemu }}
 
       - name: Print QEMU version
-        run: '"qemu-system-${{ matrix.architecture.qemu }}" --version'
+        run: '"qemu-system-${{ matrix.architecture.qemu_executable }}" --version'
 
       - uses: hashicorp/setup-packer@v3
         with:
