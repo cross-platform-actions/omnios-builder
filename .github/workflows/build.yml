@@ -20,6 +20,7 @@ jobs:
           version:
             - r151056
             - r151058
+            - r151060
 
           architecture:
             - name: x86-64

@@ -20,6 +20,7 @@ The following architectures and versions are supported:
 
 | Version | x86-64 |
 |---------|--------|
+| r151060 | ✓      |
 | r151058 | ✓      |
 | r151056 | ✓      |
 
